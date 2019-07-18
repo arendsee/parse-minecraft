@@ -1,0 +1,83 @@
+1	Dropped Item	item
+2	Experience Orb	xp_orb
+3	Area Effect Cloud	area_effect_cloud
+4	Elder Guardian	elder_guardian
+5	Wither Skeleton	wither_skeleton
+6	Stray	stray
+7	Egg	egg
+8	Lead Knot	leash_knot
+9	Painting	painting
+10	Arrow	arrow
+11	Snowball	snowball
+12	Ghast Fireball	fireball
+13	Blaze Fireball	small_fireball
+14	Ender Pearl	ender_pearl
+15	Eye of Ender	eye_of_ender_signal
+16	Splash Potion	potion
+17	Bottle o' Enchanting	xp_bottle
+18	Item Frame	item_frame
+19	Wither Skull	wither_skull
+20	Primed TNT	tnt
+21	Falling Block	falling_block
+22	Firework Rocket	fireworks_rocket
+23	Husk	husk
+24	Spectral Arrow	spectral_arrow
+25	Shulker Bullet	shulker_bullet
+26	Dragon Fireball	dragon_fireball
+27	Zombie Villager	zombie_villager
+28	Skeleton Horse	skeleton_horse
+29	Zombie Horse	zombie_horse
+30	Armor Stand	armor_stand
+31	Donkey	donkey
+32	Mule	mule
+33	Evocation Fangs	evocation_fangs
+34	Evoker	evocation_illager
+35	Vex	vex
+36	Vindicator	vindication_illager
+37	Illusioner	illusion_illager
+40	Minecart with Command Block	commandblock_minecart
+41	Boat	boat
+42	Minecart	minecart
+43	Storage Minecart	chest_minecart
+44	Powered Minecart	furnace_minecart
+45	Minecart with TNT	tnt_minecart
+46	Minecart with Hopper	hopper_minecart
+47	Minecart with Spawner	spawner_minecart
+50	Creeper	creeper
+51	Skeleton	skeleton
+52	Spider	spider
+53	Giant Zombie	giant
+54	Zombie	zombie
+55	Slime	slime
+56	Ghast	ghast
+57	Zombie Pigman	zombie_pigman
+58	Enderman	enderman
+59	Cave Spider	cave_spider
+60	Silverfish	silverfish
+61	Blaze	blaze
+62	Magma Cube	magma_cube
+63	Ender Dragon	ender_dragon
+64	Wither	wither
+65	Bat	bat
+66	Witch	witch
+67	Endermite	endermite
+68	Guardian	guardian
+69	Shulker	shulker
+90	Pig	pig
+91	Sheep	sheep
+92	Cow	cow
+93	Chicken	chicken
+94	Squid	squid
+95	Wolf	wolf
+96	Mooshroom	mooshroom
+97	Snow Golem	snowman
+98	Ocelot	ocelot
+99	Iron Golem	villager_golem
+100	Horse	horse
+101	Rabbit	rabiit
+102	Polar Bear	polar_bear
+103	Llama	llama
+104	Llama Spit	llama_spit
+105	Parrot	parrot
+120	Villager	villager
+200	Ender Crystal	ender_crystal
