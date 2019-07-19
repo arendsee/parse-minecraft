@@ -1,50 +1,59 @@
 module Lib ( parseMCA ) where
 
+import Prelude hiding (take)
 import Data.Attoparsec.ByteString
 import Data.Word (Word8)
+import Data.Bits
 import qualified Data.ByteString as B
-import Codec.Compression.Zlib (compress, decompress)
+import qualified Codec.Compression.Zlib as Zlip
 import Data.List (intersperse)
-import Data.ByteString.Base16 (encode, decode)
+import qualified Data.ByteString.Char8 as DBC
+import qualified Data.ByteString.Lazy.Char8 as BL
 
-type Location = (Word8, Word8, Word8, Word8)
+type Location = (Int, Int)
 type Timestamp = (Word8, Word8, Word8, Word8)
+type Chunk = B.ByteString
 
 parseMCA :: B.ByteString -> B.ByteString
 parseMCA x = case parseOnly toplevel x of
   (Left msg) -> error msg
-  (Right xs) -> packout xs <> "\n"
+  (Right xs) -> B.concat xs
 
-packout :: [(Location, Timestamp)] -> B.ByteString
-packout = B.intercalate "\n" . map encode . map write' where
-  write' :: (Location, Timestamp) -> B.ByteString
-  write' ((a,b,c,d),_) = B.pack [a,b,c,d]
-
-toplevel :: Parser [(Location, Timestamp)]
+toplevel :: Parser [Chunk]
 toplevel = do
-  locations <- count 1024 location
-  timestamps <- count 1024 timestamp
-  skipWhile true
-  return (zip locations timestamps)
+  _ <- count 1024 location
+  _ <- count 1024 timestamp
+  chunks <- many1 chunk
+  return chunks
 
 location :: Parser Location
 location = do
-  x0 <- anyWord8
-  x1 <- anyWord8
-  x2 <- anyWord8
-  x3 <- anyWord8
-  return (x0,x1,x2,x3)
+  loc <- int 3
+  sectors <- int 1
+  return (loc, sectors)
 
-timestamp :: Parser Timestamp
-timestamp = do
-  x0 <- anyWord8
-  x1 <- anyWord8
-  x2 <- anyWord8
-  x3 <- anyWord8
-  return (x0,x1,x2,x3)
+timestamp :: Parser Int
+timestamp = int 4
 
-true :: a -> Bool
-true _ = True
+chunk :: Parser Chunk
+chunk = do
+  chunkLength <- int 4
+  compressionType <- satisfy (\w -> w == 1 || w == 2)
+  compressedChunk <- take chunkLength
+  padding <- take (4096 - (mod chunkLength 4096))
+  return $ decompress compressedChunk
+
+decompress :: B.ByteString -> B.ByteString
+decompress = BL.toStrict . Zlip.decompress . BL.fromStrict
+
+int :: Int -> Parser Int
+int i = do
+  xs <- count i anyWord8
+  return . sum $ zipWith sint [0,8..] (reverse xs)
+  where
+    sint :: Int -> Word8 -> Int
+    sint i w = shiftL (fromIntegral w) i
+
 
 {-----------------------------------------------
 
