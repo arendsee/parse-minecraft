@@ -14,24 +14,24 @@ import Control.Applicative ((<|>))
 type Location = (Int, Int)
 type Timestamp = (Word8, Word8, Word8, Word8)
 type Chunk = B.ByteString
-
-parseNBT :: B.ByteString -> B.ByteString
-parseNBT x = case parseOnly nbt x of
-  (Left msg) -> error msg
-  (Right x) -> showTag x
  
-parseMCA :: B.ByteString -> B.ByteString
-parseMCA x = case parseOnly toplevel x of
-  (Left msg) -> error msg
-  (Right (ls, ts, cs)) -> head cs
-  -- (Right (ls, ts, cs)) -> parseNBT (head cs) -- B.concat $ map parseNBT cs
+ -- MCA format is for descirbing 32x32 chunk regions
+parseMCA :: B.ByteString -> Either String ([Location], [Int], [Tag])
+parseMCA = parseOnly toplevel
 
-toplevel :: Parser ([Location], [Int], [Chunk])
+-- NBT format is for describing blocks and such
+parseNBT :: B.ByteString -> Either String Tag
+parseNBT = parseOnly nbt
+
+toplevel :: Parser ([Location], [Int], [Tag])
 toplevel = do
   ls <- count 1024 location
   ts <- count 1024 timestamp
   cs <- many1 chunk
-  return (ls, ts, cs)
+  tags <- case mapM parseNBT cs of
+    (Right tags') -> return tags'
+    (Left msg) -> error msg
+  return (ls, ts, tags)
 
 location :: Parser Location
 location = do
@@ -59,8 +59,8 @@ chunk = do
   -- compressedChunk <- take chunkLength
   compressedChunk <- take chunkLength
   -- the entire block needs to be a multiple of 4096, this includes the
-  -- chunkLength AND the size (4 bytes) and compression type (1 byte)
-  padding <- case mod (chunkLength + 5) 4096 of
+  -- chunkLength AND the size (4 bytes)
+  padding <- case mod (chunkLength + 4) 4096 of
     0 -> take 0
     i -> take (4096 - i)
   return $ decompress compressedChunk
@@ -136,20 +136,19 @@ hexByte x = hexa (fromIntegral (shiftR (shiftL x 4) 4)) <> hexa (fromIntegral (s
 
 tag :: Parser Name -> Parser Tag
 tag namer
-    =   tag_end
-    <|> tag_byte namer
-    <|> tag_short namer
-    <|> tag_int namer
-    <|> tag_long namer
-    <|> tag_float namer
-    <|> tag_double namer
-    <|> tag_byte_array namer
-    <|> tag_string namer
-    <|> tag_list namer
-    <|> tag_compound namer
-    <|> tag_int_array namer
-    <|> tag_long_array namer
-    <|> tag_fail
+    =   try (tag_byte namer)
+    <|> try (tag_short namer)
+    <|> try (tag_int namer)
+    <|> try (tag_long namer)
+    <|> try (tag_float namer)
+    <|> try (tag_double namer)
+    <|> try (tag_byte_array namer)
+    <|> try (tag_string namer)
+    <|> try (tag_list namer)
+    <|> try (tag_compound namer)
+    <|> try (tag_int_array namer)
+    <|> try (tag_long_array namer)
+    <?> "Expected something"
 
 tagName :: Parser Name
 tagName = do
@@ -282,7 +281,8 @@ tag_compound :: Parser Name -> Parser Tag
 tag_compound namer = do
   _ <- word8 0x0a
   name <- namer
-  tags <- manyTill (tag tagName) tag_end
+  tags <- many' (tag tagName)
+  _ <- tag_end
   return $ TagCompound name tags
 
 -- TAG_Int's payload size, then size TAG_Int's payloads.
@@ -302,13 +302,6 @@ tag_long_array namer = do
   size <- int 4
   tags <- many' (tag emptyName)
   return $ TagLongArray name [i | TagLong "" i <- tags]
-
-tag_fail :: Parser Tag
-tag_fail = do
-  foward <- take 32
-  error . show $ toHex foward
-  return TagEnd
-
 
 {-----------------------------------------------
 
