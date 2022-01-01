@@ -291,8 +291,8 @@ tag_int_array namer = do
   _ <- word8 0x0b
   name <- namer
   size <- int 4
-  tags <- many' (tag emptyName)
-  return $ TagIntArray name [i | TagInt "" i <- tags]
+  array <- count size (int 4)
+  return $ TagIntArray name array
 
 -- TAG_Int's payload size, then size TAG_Long's payloads.
 tag_long_array :: Parser Name -> Parser Tag
@@ -300,8 +300,8 @@ tag_long_array namer = do
   _ <- word8 0x0c
   name <- namer
   size <- int 4
-  tags <- many' (tag emptyName)
-  return $ TagLongArray name [i | TagLong "" i <- tags]
+  array <- count size (int 8)
+  return $ TagLongArray name array
 
 {-----------------------------------------------
 
