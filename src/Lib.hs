@@ -2,7 +2,7 @@ module Lib ( parseMCA ) where
 
 import Prelude hiding (take)
 import Data.Attoparsec.ByteString
-import Data.Word (Word8)
+import Data.Word (Word8, Word32, Word64)
 import Data.Bits
 import qualified Data.ByteString as B
 import qualified Codec.Compression.Zlib as Zlib
@@ -11,8 +11,10 @@ import qualified Data.ByteString.Lazy.Char8 as BL
 import qualified Data.ByteString.UTF8 as BSU      -- from utf8-string
 import Control.Applicative ((<|>))
 
+import Numbers (signed_int, unsigned_int, float, double)
+
 type Location = (Int, Int)
-type Timestamp = (Word8, Word8, Word8, Word8)
+type Timestamp = Word32
 type Chunk = B.ByteString
  
  -- MCA format is for descirbing 32x32 chunk regions
@@ -35,24 +37,17 @@ toplevel = do
 
 location :: Parser Location
 location = do
-  loc <- int 3
-  sectors <- int 1
+  loc <- unsigned_int 3
+  sectors <- unsigned_int 1
   return (loc, sectors)
 
 timestamp :: Parser Int
-timestamp = int 4
+timestamp = unsigned_int 4
 
--- this seems to be correct ...
-bigEndianInt :: [Word8] -> Int
-bigEndianInt xs = sum $ zipWith (\l x -> shiftL (fromIntegral x) l) [0,8..] (reverse xs)
-
--- take i bytes and turn it into an int
-int :: Int -> Parser Int
-int i = fmap bigEndianInt $ count i anyWord8
 
 chunk :: Parser Chunk
 chunk = do
-  chunkLength' <- int 4 --2297
+  chunkLength' <- unsigned_int 4 --2297
   _ <- satisfy (\w -> w == 1 || w == 2) -- compressionType
   -- since the compression type byte is removed
   let chunkLength = chunkLength' - 1
@@ -81,8 +76,8 @@ data Tag
   | TagShort Name Int
   | TagInt Name Int
   | TagLong Name Int
-  | TagFloat Name Double
-  | TagDouble Name Double
+  | TagFloat Name (Bool, Int, Int)
+  | TagDouble Name (Bool, Int, Int)
   | TagByteArray Name B.ByteString
   | TagString Name B.ByteString
   | TagList Name [Tag]
@@ -91,20 +86,20 @@ data Tag
   | TagLongArray Name [Int]
   deriving(Show, Ord, Eq)
 
-showTag :: Tag -> B.ByteString
-showTag (TagByte n word)        = "TAG_Byte("      <> n <> ")" <> hexByte word
-showTag (TagShort n x)          = "TAG_Short("     <> n <> ")" <> BSU.fromString (show x)
-showTag (TagInt n x)            = "TAG_Int("       <> n <> ")" <> BSU.fromString (show x)
-showTag (TagLong n x)           = "TAG_Long("      <> n <> ")" <> BSU.fromString (show x)
-showTag (TagFloat n x)          = "TAG_Float("     <> n <> ")" <> BSU.fromString (show x)
-showTag (TagDouble n x)         = "TAG_Double("    <> n <> ")" <> BSU.fromString (show x)
-showTag (TagByteArray n s)      = "TAG_ByteArray(" <> n <> ")" <> "[" <> toHex s <> "]"
-showTag (TagString n s)         = "TAG_String("    <> n <> ")" <> "\"" <> s <> "\""
-showTag (TagList n xs)          = "TAG_List("      <> n <> ")" <> ("[" <> B.intercalate ", " (map showTag xs) <> "]")
-showTag (TagCompound n entries) = "TAG_Compound("  <> n <> ")" <> ("{" <> B.intercalate ", " (map showTag entries) <> "}")
-showTag (TagIntArray n xs)      = "TAG_IntArray("  <> n <> ("[" <> B.intercalate ", " [ BSU.fromString $ show x | x <- xs] <> "]")
-showTag (TagLongArray n xs)     = "TAG_LongArray(" <> n <> ("[" <> B.intercalate ", " [ BSU.fromString $ show x | x <- xs] <> "]")
-showTag (TagEnd)                = error "TagEnd should not appear in output"
+-- showTag :: Tag -> B.ByteString
+-- showTag (TagByte n word)        = "TAG_Byte("      <> n <> ")" <> hexByte word
+-- showTag (TagShort n x)          = "TAG_Short("     <> n <> ")" <> BSU.fromString (show x)
+-- showTag (TagInt n x)            = "TAG_Int("       <> n <> ")" <> BSU.fromString (show x)
+-- showTag (TagLong n x)           = "TAG_Long("      <> n <> ")" <> BSU.fromString (show x)
+-- showTag (TagFloat n x)          = "TAG_Float("     <> n <> ")" <> BSU.fromString (show x)
+-- showTag (TagDouble n x)         = "TAG_Double("    <> n <> ")" <> BSU.fromString (show x)
+-- showTag (TagByteArray n s)      = "TAG_ByteArray(" <> n <> ")" <> "[" <> toHex s <> "]"
+-- showTag (TagString n s)         = "TAG_String("    <> n <> ")" <> "\"" <> s <> "\""
+-- showTag (TagList n xs)          = "TAG_List("      <> n <> ")" <> ("[" <> B.intercalate ", " (map showTag xs) <> "]")
+-- showTag (TagCompound n entries) = "TAG_Compound("  <> n <> ")" <> ("{" <> B.intercalate ", " (map showTag entries) <> "}")
+-- showTag (TagIntArray n xs)      = "TAG_IntArray("  <> n <> ("[" <> B.intercalate ", " [ BSU.fromString $ show x | x <- xs] <> "]")
+-- showTag (TagLongArray n xs)     = "TAG_LongArray(" <> n <> ("[" <> B.intercalate ", " [ BSU.fromString $ show x | x <- xs] <> "]")
+-- showTag (TagEnd)                = error "TagEnd should not appear in output"
 
 addName :: Name -> B.ByteString -> B.ByteString
 addName "" x = x 
@@ -152,7 +147,7 @@ tag namer
 
 tagName :: Parser Name
 tagName = do
-  size <- int 2
+  size <- unsigned_int 2
   name <- take size
   return name
 
@@ -188,7 +183,7 @@ tag_short :: Parser Name -> Parser Tag
 tag_short namer = do
   _ <- word8 0x02
   name <- namer
-  i <- int 2
+  i <- signed_int 2
   return $ TagShort name i
 
 -- -- from http://web.archive.org/web/20110723210920/http://www.minecraft.net/docs/NBT.txt
@@ -198,7 +193,7 @@ tag_int :: Parser Name -> Parser Tag
 tag_int namer = do
   _ <- word8 0x03
   name <- namer
-  i <- int 4
+  i <- signed_int 4
   return $ TagShort name i
 
 -- -- from http://web.archive.org/web/20110723210920/http://www.minecraft.net/docs/NBT.txt
@@ -208,7 +203,7 @@ tag_long :: Parser Name -> Parser Tag
 tag_long namer = do
   _ <- word8 0x04
   name <- namer
-  i <- int 8
+  i <- signed_int 8
   return $ TagLong name i
 
 -- -- from http://web.archive.org/web/20110723210920/http://www.minecraft.net/docs/NBT.txt
@@ -218,8 +213,8 @@ tag_float :: Parser Name -> Parser Tag
 tag_float namer = do
   _ <- word8 0x05
   name <- namer
-  _ <- take 4
-  return $ TagFloat name 1.1
+  x <- float
+  return $ TagFloat name x
 
 -- -- from http://web.archive.org/web/20110723210920/http://www.minecraft.net/docs/NBT.txt
 -- TYPE: 6  NAME: TAG_Double
@@ -228,8 +223,8 @@ tag_double :: Parser Name -> Parser Tag
 tag_double namer = do
   _ <- word8 0x06
   name <- namer
-  _ <- take 8
-  return $ TagDouble name 2.2
+  x <- double
+  return $ TagDouble name x
 
 -- -- from http://web.archive.org/web/20110723210920/http://www.minecraft.net/docs/NBT.txt
 -- TYPE: 7  NAME: TAG_Byte_Array
@@ -239,7 +234,7 @@ tag_byte_array :: Parser Name -> Parser Tag
 tag_byte_array namer = do
   _ <- word8 0x07
   name <- namer
-  size <- int 4
+  size <- unsigned_int 4
   array <- take size
   return $ TagByteArray name array
 
@@ -251,7 +246,7 @@ tag_string :: Parser Name -> Parser Tag
 tag_string namer = do
   _ <- word8 0x08
   name <- namer
-  size <- int 2
+  size <- unsigned_int 2
   string <- take size
   return $ TagString name string
 
@@ -290,8 +285,8 @@ tag_int_array :: Parser Name -> Parser Tag
 tag_int_array namer = do
   _ <- word8 0x0b
   name <- namer
-  size <- int 4
-  array <- count size (int 4)
+  size <- unsigned_int 4
+  array <- count size (signed_int 4)
   return $ TagIntArray name array
 
 -- TAG_Int's payload size, then size TAG_Long's payloads.
@@ -299,8 +294,8 @@ tag_long_array :: Parser Name -> Parser Tag
 tag_long_array namer = do
   _ <- word8 0x0c
   name <- namer
-  size <- int 4
-  array <- count size (int 8)
+  size <- unsigned_int 4
+  array <- count size (signed_int 8)
   return $ TagLongArray name array
 
 {-----------------------------------------------
