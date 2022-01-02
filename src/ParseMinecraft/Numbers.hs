@@ -1,4 +1,4 @@
-module Numbers
+module ParseMinecraft.Numbers
   ( signed_int 
   , unsigned_int
   , float

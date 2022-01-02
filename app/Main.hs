@@ -1,8 +1,9 @@
 module Main where
 
-import Lib
+import ParseMinecraft
 import qualified Data.ByteString as B
 import System.Environment
+import Text.Pretty.Simple (pPrint)
 
 main :: IO ()
 main = do
@@ -12,9 +13,9 @@ main = do
     (filename : _) -> do
       mca <- fmap parseMCA (B.readFile filename)
       case mca of
-        Right (locations, timestamps, chunks) ->
+        Right (locations, timestamps, chunks, tags) ->
           -- putStrLn $ show $ length $ locations
           -- putStrLn $ show $ length $ timestamps
           -- putStrLn $ show $ length $ chunks
-          putStrLn . show $ chunks 
+          pPrint $ tags
         Left msg -> putStr msg

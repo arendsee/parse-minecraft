@@ -1,0 +1,13 @@
+cradle:
+  stack:
+    - path: "./src"
+      component: "parse-minecraft:lib"
+
+    - path: "./test"
+      component: "parse-minecraft:test:parse-minecraft-test"
+
+    - path: "./app/Main.hs"
+      component: "parse-minecraft:exe:parse-minecraft-exe"
+
+    - path: "./app/Paths_parse_minecraft.hs"
+      component: "parse-minecraft:exe:parse-minecraft-exe"

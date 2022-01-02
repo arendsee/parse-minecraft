@@ -1,4 +1,4 @@
-module Lib ( parseMCA ) where
+module ParseMinecraft.Lib ( parseMCA, hexByte) where
 
 import Prelude hiding (take)
 import Data.Attoparsec.ByteString
@@ -9,23 +9,24 @@ import qualified Codec.Compression.Zlib as Zlib
 import Data.List (intersperse)
 import qualified Data.ByteString.Lazy.Char8 as BL
 import qualified Data.ByteString.UTF8 as BSU      -- from utf8-string
+import qualified Data.ByteString as DB
 import Control.Applicative ((<|>))
 
-import Numbers (signed_int, unsigned_int, float, double)
+import ParseMinecraft.Numbers (signed_int, unsigned_int, float, double)
 
 type Location = (Int, Int)
 type Timestamp = Word32
 type Chunk = B.ByteString
  
  -- MCA format is for descirbing 32x32 chunk regions
-parseMCA :: B.ByteString -> Either String ([Location], [Int], [Tag])
+parseMCA :: B.ByteString -> Either String ([Location], [Int], [Chunk], [Tag])
 parseMCA = parseOnly toplevel
 
 -- NBT format is for describing blocks and such
 parseNBT :: B.ByteString -> Either String Tag
 parseNBT = parseOnly nbt
 
-toplevel :: Parser ([Location], [Int], [Tag])
+toplevel :: Parser ([Location], [Int], [Chunk], [Tag])
 toplevel = do
   ls <- count 1024 location
   ts <- count 1024 timestamp
@@ -33,7 +34,7 @@ toplevel = do
   tags <- case mapM parseNBT cs of
     (Right tags') -> return tags'
     (Left msg) -> error msg
-  return (ls, ts, tags)
+  return (ls, ts, cs, tags)
 
 location :: Parser Location
 location = do
@@ -64,7 +65,7 @@ decompress :: B.ByteString -> B.ByteString
 decompress = BL.toStrict . Zlib.decompress . BL.fromStrict
 
 nbt :: Parser Tag
-nbt = tag tagName
+nbt = tag Nothing tagName
 
 data NamedTag = NamedTag B.ByteString Tag deriving(Show, Ord, Eq)
 
@@ -80,11 +81,13 @@ data Tag
   | TagDouble Name (Bool, Int, Int)
   | TagByteArray Name B.ByteString
   | TagString Name B.ByteString
-  | TagList Name [Tag]
+  | TagList Int String Name [Tag]
   | TagCompound Name [Tag]
   | TagIntArray Name [Int]
   | TagLongArray Name [Int]
   deriving(Show, Ord, Eq)
+
+
 
 -- showTag :: Tag -> B.ByteString
 -- showTag (TagByte n word)        = "TAG_Byte("      <> n <> ")" <> hexByte word
@@ -110,7 +113,7 @@ toHex :: B.ByteString -> B.ByteString
 toHex xs = B.concatMap hexByte xs
 
 hexByte :: Word8 -> B.ByteString
-hexByte x = hexa (fromIntegral (shiftR (shiftL x 4) 4)) <> hexa (fromIntegral (shiftR x 4)) where
+hexByte x =  hexa (fromIntegral (shiftR x 4)) <> hexa (fromIntegral (shiftR (shiftL x 4) 4)) where
   hexa 0x0 = "0"
   hexa 0x1 = "1"
   hexa 0x2 = "2"
@@ -129,21 +132,26 @@ hexByte x = hexa (fromIntegral (shiftR (shiftL x 4) 4)) <> hexa (fromIntegral (s
   hexa 0xf = "f"
 
 
-tag :: Parser Name -> Parser Tag
-tag namer
-    =   try (tag_byte namer)
-    <|> try (tag_short namer)
-    <|> try (tag_int namer)
-    <|> try (tag_long namer)
-    <|> try (tag_float namer)
-    <|> try (tag_double namer)
-    <|> try (tag_byte_array namer)
-    <|> try (tag_string namer)
-    <|> try (tag_list namer)
-    <|> try (tag_compound namer)
-    <|> try (tag_int_array namer)
-    <|> try (tag_long_array namer)
-    <?> "Expected something"
+tag :: Maybe Word8 -> Parser Name -> Parser Tag
+tag tagid namer = do
+  id <- case tagid of
+    (Just id') -> return id'
+    Nothing -> anyWord8
+  case id of
+    0x00 -> tag_end
+    0x01 -> tag_byte namer
+    0x02 -> tag_short namer
+    0x03 -> tag_int namer
+    0x04 -> tag_long namer
+    0x05 -> tag_float namer
+    0x06 -> tag_double namer
+    0x07 -> tag_byte_array namer
+    0x08 -> tag_string namer
+    0x09 -> tag_list namer
+    0x0a -> tag_compound namer
+    0x0b -> tag_int_array namer
+    0x0c -> tag_long_array namer
+    _ -> error ("Illegal tag id: " ++ show (hexByte id))
 
 tagName :: Parser Name
 tagName = do
@@ -154,6 +162,7 @@ tagName = do
 emptyName :: Parser Name
 emptyName = return ""
 
+
 -- -- from http://web.archive.org/web/20110723210920/http://www.minecraft.net/docs/NBT.txt
 -- TYPE: 0  NAME: TAG_End
 -- Payload: None.
@@ -163,7 +172,7 @@ emptyName = return ""
 --       when named, and nothing in all other cases)
 tag_end :: Parser Tag
 tag_end = do
-  _ <- word8 0x00
+  -- _ <- word8 0x00
   return TagEnd
 
 -- -- from http://web.archive.org/web/20110723210920/http://www.minecraft.net/docs/NBT.txt
@@ -171,7 +180,7 @@ tag_end = do
 -- Payload: A single signed byte (8 bits)
 tag_byte :: Parser Name -> Parser Tag
 tag_byte namer = do
-  _ <- word8 0x01
+  -- _ <- word8 0x01
   name <- namer
   x <- B.head <$> take 1
   return $ TagByte name x
@@ -181,7 +190,7 @@ tag_byte namer = do
 -- Payload: A signed short (16 bits, big endian)
 tag_short :: Parser Name -> Parser Tag
 tag_short namer = do
-  _ <- word8 0x02
+  -- _ <- word8 0x02
   name <- namer
   i <- signed_int 2
   return $ TagShort name i
@@ -191,7 +200,7 @@ tag_short namer = do
 -- Payload: A signed short (32 bits, big endian)
 tag_int :: Parser Name -> Parser Tag
 tag_int namer = do
-  _ <- word8 0x03
+  -- _ <- word8 0x03
   name <- namer
   i <- signed_int 4
   return $ TagShort name i
@@ -201,7 +210,7 @@ tag_int namer = do
 -- Payload: A signed long (64 bits, big endian)
 tag_long :: Parser Name -> Parser Tag
 tag_long namer = do
-  _ <- word8 0x04
+  -- _ <- word8 0x04
   name <- namer
   i <- signed_int 8
   return $ TagLong name i
@@ -211,7 +220,7 @@ tag_long namer = do
 -- Payload: A floating point value (32 bits, big endian, IEEE 754-2008, binary32)
 tag_float :: Parser Name -> Parser Tag
 tag_float namer = do
-  _ <- word8 0x05
+  -- _ <- word8 0x05
   name <- namer
   x <- float
   return $ TagFloat name x
@@ -221,7 +230,7 @@ tag_float namer = do
 -- Payload: A floating point value (64 bits, big endian, IEEE 754-2008, binary64)
 tag_double :: Parser Name -> Parser Tag
 tag_double namer = do
-  _ <- word8 0x06
+  -- _ <- word8 0x06
   name <- namer
   x <- double
   return $ TagDouble name x
@@ -232,7 +241,7 @@ tag_double namer = do
 --          An array of bytes of unspecified format. The length of this array is <length> bytes
 tag_byte_array :: Parser Name -> Parser Tag
 tag_byte_array namer = do
-  _ <- word8 0x07
+  -- _ <- word8 0x07
   name <- namer
   size <- unsigned_int 4
   array <- take size
@@ -244,7 +253,7 @@ tag_byte_array namer = do
 --          An array of bytes defining a string in UTF-8 format. The length of this array is <length> bytes
 tag_string :: Parser Name -> Parser Tag
 tag_string namer = do
-  _ <- word8 0x08
+  -- _ <- word8 0x08
   name <- namer
   size <- unsigned_int 2
   string <- take size
@@ -259,10 +268,12 @@ tag_string namer = do
 -- Notes:   All tags share the same type.
 tag_list :: Parser Name -> Parser Tag
 tag_list namer = do
-  _ <- word8 0x09
+  -- _ <- word8 0x09
   name <- namer
-  tags <- many' (tag emptyName)
-  return $ TagList name tags
+  tagid <- anyWord8
+  size <- unsigned_int 4
+  tags <- count size (tag (Just tagid) emptyName)
+  return $ TagList size (show tagid) name tags
 
 -- -- from http://web.archive.org/web/20110723210920/http://www.minecraft.net/docs/NBT.txt
 -- TYPE: 10 NAME: TAG_Compound
@@ -274,16 +285,16 @@ tag_list namer = do
 --          The order of the tags is not guaranteed.
 tag_compound :: Parser Name -> Parser Tag
 tag_compound namer = do
-  _ <- word8 0x0a
+  -- _ <- word8 0x0a
   name <- namer
-  tags <- many' (tag tagName)
+  tags <- many' (tag Nothing tagName)
   _ <- tag_end
   return $ TagCompound name tags
 
 -- TAG_Int's payload size, then size TAG_Int's payloads.
 tag_int_array :: Parser Name -> Parser Tag
 tag_int_array namer = do
-  _ <- word8 0x0b
+  -- _ <- word8 0x0b
   name <- namer
   size <- unsigned_int 4
   array <- count size (signed_int 4)
@@ -292,7 +303,7 @@ tag_int_array namer = do
 -- TAG_Int's payload size, then size TAG_Long's payloads.
 tag_long_array :: Parser Name -> Parser Tag
 tag_long_array namer = do
-  _ <- word8 0x0c
+  -- _ <- word8 0x0c
   name <- namer
   size <- unsigned_int 4
   array <- count size (signed_int 8)

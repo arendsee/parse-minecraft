@@ -43,3 +43,18 @@ executables:
     - -haddock
     dependencies:
     - parse-minecraft
+    - pretty-simple
+
+tests:
+  morloc-test:
+    main:          Main.hs
+    source-dirs:   test
+    ghc-options:
+      - -threaded
+      - -rtsopts
+      - -with-rtsopts=-N
+    dependencies:
+      - parse-minecraft
+      - base >=4.10.1.0 && <5
+      - tasty >=1.0.1.1 && <1.3
+      - tasty-hunit >=0.10.0.1 && <0.11
