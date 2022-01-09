@@ -3,6 +3,7 @@ module ParseMinecraft.Numbers
   , unsigned_int
   , float
   , double
+  , unsignedBigEndianInt 
   ) where
 
 import Prelude hiding (take)

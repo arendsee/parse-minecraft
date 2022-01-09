@@ -13,9 +13,5 @@ main = do
     (filename : _) -> do
       mca <- fmap parseMCA (B.readFile filename)
       case mca of
-        Right (locations, timestamps, chunks, tags) ->
-          -- putStrLn $ show $ length $ locations
-          -- putStrLn $ show $ length $ timestamps
-          -- putStrLn $ show $ length $ chunks
-          pPrint $ tags
+        Right (locations, timestamps, chunks, tags) -> pPrint tags
         Left msg -> putStr msg

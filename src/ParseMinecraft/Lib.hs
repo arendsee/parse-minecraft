@@ -13,11 +13,8 @@ import qualified Data.ByteString as DB
 import Control.Applicative ((<|>))
 
 import ParseMinecraft.Numbers (signed_int, unsigned_int, float, double)
+import ParseMinecraft.Namespace
 
-type Location = (Int, Int)
-type Timestamp = Word32
-type Chunk = B.ByteString
- 
  -- MCA format is for descirbing 32x32 chunk regions
 parseMCA :: B.ByteString -> Either String ([Location], [Int], [Chunk], [Tag])
 parseMCA = parseOnly toplevel
@@ -45,20 +42,23 @@ location = do
 timestamp :: Parser Int
 timestamp = unsigned_int 4
 
-
 chunk :: Parser Chunk
 chunk = do
-  chunkLength' <- unsigned_int 4 --2297
-  _ <- satisfy (\w -> w == 1 || w == 2) -- compressionType
-  -- since the compression type byte is removed
-  let chunkLength = chunkLength' - 1
-  -- compressedChunk <- take chunkLength
-  compressedChunk <- take chunkLength
+  -- the size of the compressed data black + 1
+  chunkLength <- unsigned_int 4
+
+  -- the compression format
+  compression <- word8 0x01 <|> word8 0x02
+
+  -- minus 1 since the compression type byte is removed
+  compressedChunk <- take (chunkLength - 1)
+
   -- the entire block needs to be a multiple of 4096, this includes the
-  -- chunkLength AND the size (4 bytes)
+  -- chunkLength AND the 4 size bytes
   padding <- case mod (chunkLength + 4) 4096 of
     0 -> take 0
     i -> take (4096 - i)
+
   return $ decompress compressedChunk
 
 decompress :: B.ByteString -> B.ByteString
@@ -66,28 +66,6 @@ decompress = BL.toStrict . Zlib.decompress . BL.fromStrict
 
 nbt :: Parser Tag
 nbt = tag Nothing tagName
-
-data NamedTag = NamedTag B.ByteString Tag deriving(Show, Ord, Eq)
-
-type Name = B.ByteString
-
-data Tag
-  = TagEnd
-  | TagByte Name Word8
-  | TagShort Name Int
-  | TagInt Name Int
-  | TagLong Name Int
-  | TagFloat Name (Bool, Int, Int)
-  | TagDouble Name (Bool, Int, Int)
-  | TagByteArray Name B.ByteString
-  | TagString Name B.ByteString
-  | TagList Int String Name [Tag]
-  | TagCompound Name [Tag]
-  | TagIntArray Name [Int]
-  | TagLongArray Name [Int]
-  deriving(Show, Ord, Eq)
-
-
 
 -- showTag :: Tag -> B.ByteString
 -- showTag (TagByte n word)        = "TAG_Byte("      <> n <> ")" <> hexByte word
@@ -132,26 +110,31 @@ hexByte x =  hexa (fromIntegral (shiftR x 4)) <> hexa (fromIntegral (shiftR (shi
   hexa 0xf = "f"
 
 
-tag :: Maybe Word8 -> Parser Name -> Parser Tag
+tag :: Maybe TagId -> Parser Name -> Parser Tag
 tag tagid namer = do
   id <- case tagid of
     (Just id') -> return id'
-    Nothing -> anyWord8
-  case id of
-    0x00 -> tag_end
-    0x01 -> tag_byte namer
-    0x02 -> tag_short namer
-    0x03 -> tag_int namer
-    0x04 -> tag_long namer
-    0x05 -> tag_float namer
-    0x06 -> tag_double namer
-    0x07 -> tag_byte_array namer
-    0x08 -> tag_string namer
-    0x09 -> tag_list namer
-    0x0a -> tag_compound namer
-    0x0b -> tag_int_array namer
-    0x0c -> tag_long_array namer
-    _ -> error ("Illegal tag id: " ++ show (hexByte id))
+    Nothing -> do
+      code <- anyWord8
+      case code2tagid code of
+        (Just tagid') -> return tagid'
+        Nothing -> error "Illegal tag code"
+  tagParser id
+  where
+    tagParser :: TagId -> Parser Tag 
+    tagParser TagEndId       = tag_end
+    tagParser TagByteId      = tag_byte namer
+    tagParser TagShortId     = tag_short namer
+    tagParser TagIntId       = tag_int namer
+    tagParser TagLongId      = tag_long namer
+    tagParser TagFloatId     = tag_float namer
+    tagParser TagDoubleId    = tag_double namer
+    tagParser TagByteArrayId = tag_byte_array namer
+    tagParser TagStringId    = tag_string namer
+    tagParser TagListId      = tag_list namer
+    tagParser TagCompoundId  = tag_compound namer
+    tagParser TagIntArrayId  = tag_int_array namer
+    tagParser TagLongArrayId = tag_long_array namer
 
 tagName :: Parser Name
 tagName = do
@@ -270,10 +253,13 @@ tag_list :: Parser Name -> Parser Tag
 tag_list namer = do
   -- _ <- word8 0x09
   name <- namer
-  tagid <- anyWord8
+  tagcode <- anyWord8
   size <- unsigned_int 4
-  tags <- count size (tag (Just tagid) emptyName)
-  return $ TagList size (show tagid) name tags
+  tagid <- case code2tagid tagcode of
+    (Just tagid') -> return tagid'
+    Nothing -> error "Illegal code"
+  tags <- count size $ tag (Just tagid) emptyName
+  return $ TagList size tagid name tags
 
 -- -- from http://web.archive.org/web/20110723210920/http://www.minecraft.net/docs/NBT.txt
 -- TYPE: 10 NAME: TAG_Compound
