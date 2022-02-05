@@ -1,9 +1,9 @@
 module ParseMinecraft.Namespace
   ( Tag(..)
   , TagId(..)
+  , Chunk(..)
   , Location
   , Timestamp
-  , Chunk
   , NamedTag
   , Name
   , code2tagid
@@ -17,8 +17,6 @@ type Location = (Int, Int)
 
 type Timestamp = Word32
 
-type Chunk = B.ByteString
- 
 data NamedTag = NamedTag B.ByteString Tag deriving(Show, Ord, Eq)
 
 type Name = B.ByteString
@@ -39,7 +37,6 @@ data Tag
   | TagLongArray Name [Int]
   deriving(Show, Ord, Eq)
 
-
 data TagId
   = TagEndId
   | TagByteId
@@ -55,6 +52,12 @@ data TagId
   | TagIntArrayId
   | TagLongArrayId
   deriving(Show, Ord, Eq)
+
+data Chunk = Chunk
+  { xOffset :: Int
+  , zOffset :: Int
+  , blocks :: [[[B.ByteString]]]
+  }
 
 
 code2tagid :: Word8 -> Maybe TagId

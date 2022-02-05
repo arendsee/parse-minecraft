@@ -15,15 +15,17 @@ import Control.Applicative ((<|>))
 import ParseMinecraft.Numbers (signed_int, unsigned_int, float, double)
 import ParseMinecraft.Namespace
 
- -- MCA format is for descirbing 32x32 chunk regions
-parseMCA :: B.ByteString -> Either String ([Location], [Int], [Chunk], [Tag])
+type ChunkData = B.ByteString
+
+-- MCA format is for descirbing 32x32 chunk regions
+parseMCA :: B.ByteString -> Either String ([Location], [Int], [ChunkData], [Tag])
 parseMCA = parseOnly toplevel
 
 -- NBT format is for describing blocks and such
 parseNBT :: B.ByteString -> Either String Tag
 parseNBT = parseOnly nbt
 
-toplevel :: Parser ([Location], [Int], [Chunk], [Tag])
+toplevel :: Parser ([Location], [Int], [ChunkData], [Tag])
 toplevel = do
   ls <- count 1024 location
   ts <- count 1024 timestamp
@@ -42,7 +44,7 @@ location = do
 timestamp :: Parser Int
 timestamp = unsigned_int 4
 
-chunk :: Parser Chunk
+chunk :: Parser ChunkData
 chunk = do
   -- the size of the compressed data black + 1
   chunkLength <- unsigned_int 4
@@ -119,22 +121,20 @@ tag tagid namer = do
       case code2tagid code of
         (Just tagid') -> return tagid'
         Nothing -> error "Illegal tag code"
-  tagParser id
-  where
-    tagParser :: TagId -> Parser Tag 
-    tagParser TagEndId       = tag_end
-    tagParser TagByteId      = tag_byte namer
-    tagParser TagShortId     = tag_short namer
-    tagParser TagIntId       = tag_int namer
-    tagParser TagLongId      = tag_long namer
-    tagParser TagFloatId     = tag_float namer
-    tagParser TagDoubleId    = tag_double namer
-    tagParser TagByteArrayId = tag_byte_array namer
-    tagParser TagStringId    = tag_string namer
-    tagParser TagListId      = tag_list namer
-    tagParser TagCompoundId  = tag_compound namer
-    tagParser TagIntArrayId  = tag_int_array namer
-    tagParser TagLongArrayId = tag_long_array namer
+  case id of
+    TagByteId      -> tag_byte namer
+    TagShortId     -> tag_short namer
+    TagIntId       -> tag_int namer
+    TagLongId      -> tag_long namer
+    TagFloatId     -> tag_float namer
+    TagDoubleId    -> tag_double namer
+    TagByteArrayId -> tag_byte_array namer
+    TagStringId    -> tag_string namer
+    TagListId      -> tag_list namer
+    TagCompoundId  -> tag_compound namer
+    TagIntArrayId  -> tag_int_array namer
+    TagLongArrayId -> tag_long_array namer
+    TagEndId       -> tag_end
 
 tagName :: Parser Name
 tagName = do
@@ -273,8 +273,7 @@ tag_compound :: Parser Name -> Parser Tag
 tag_compound namer = do
   -- _ <- word8 0x0a
   name <- namer
-  tags <- many' (tag Nothing tagName)
-  _ <- tag_end
+  tags <- manyTill (tag Nothing tagName) (word8 0x0)
   return $ TagCompound name tags
 
 -- TAG_Int's payload size, then size TAG_Int's payloads.
