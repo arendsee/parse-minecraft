@@ -1,6 +1,6 @@
 module ParseMinecraft.Numbers
-  ( signed_int 
-  , unsigned_int
+  ( signedInt 
+  , unsignedInt
   , float
   , double
   , unsignedBigEndianInt 
@@ -19,7 +19,7 @@ import qualified Data.ByteString as BS
 -- bit 22-0 (23 bits) : significand
 float :: Parser (Bool, Int, Int)
 float = do
-  words <- fmap BS.unpack $ take 4
+  words <- BS.unpack <$> take 4
   return $ word2float words
 
 
@@ -38,7 +38,7 @@ word2float _ = error "expected 4 words"
 
 double :: Parser (Bool, Int, Int) 
 double = do
-  words <- fmap BS.unpack $ take 8
+  words <- BS.unpack <$> take 8
   return $ word2double words
 
 word2double :: [Word8] -> (Bool, Int, Int)
@@ -63,11 +63,11 @@ word2double [w0,w1,w2,w3,w4,w5,w6,w7] =
 word2double _ = error "expected 4 words"
 
 -- take i bytes and turn it into an unsigned int
-unsigned_int :: Int -> Parser Int
-unsigned_int i = fmap unsignedBigEndianInt $ count i anyWord8
+unsignedInt :: Int -> Parser Int
+unsignedInt i = unsignedBigEndianInt <$> count i anyWord8
 
-signed_int :: Int -> Parser Int
-signed_int i = fmap (sign . unsignedBigEndianInt) $ count i anyWord8 
+signedInt :: Int -> Parser Int
+signedInt i = sign . unsignedBigEndianInt <$> count i anyWord8 
   where
     sign :: Int -> Int
     sign i

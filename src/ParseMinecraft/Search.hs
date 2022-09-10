@@ -49,7 +49,7 @@ cube
   -> [Int] -- indices into [a]
   -> [a] -- descriptions of each block
   -> [[[a]]] -- folded 3d cube
-cube dimension longs names = foldDimensions dimension [names !! i | i <- concat (map (unpackInt (length names)) longs)]
+cube dimension longs names = foldDimensions dimension [names !! i | i <- concatMap (unpackInt (length names)) longs]
 
 -- | fold a 1D vector of blocks to a 3D vector
 foldDimensions
@@ -86,7 +86,7 @@ unpackInt size x =
 
 sections :: Tag -> Maybe [[[B.ByteString]]]
 sections (TagList _ TagCompoundId "Sections" xs)
-  = fmap (stackBlocksY . map (uncurry (cube (16,16,16)))) $ mapM section xs
+  = stackBlocksY . map (uncurry (cube (16,16,16))) <$> mapM section xs
 sections (TagCompound _ xs) = case DM.mapMaybe sections xs of
   [x] -> Just x
   _ -> Nothing
