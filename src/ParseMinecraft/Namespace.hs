@@ -8,14 +8,36 @@ module ParseMinecraft.Namespace
   , Name
   , code2tagid
   , tagid2code
+  , module Data.Word
+  , module Data.Word.Word24
+  , module Data.Int
   ) where
 
-import Data.Word (Word8, Word32, Word64)
+import Data.Word (Word8, Word16, Word32, Word64)
+import Data.Word.Word24 (Word24)
+import Data.Int (Int8, Int16, Int32, Int64)
 import qualified Data.ByteString as B
 
-type Location = (Int, Int)
+import qualified ParseMinecraft.Parser as P
 
-type Timestamp = Word32
+type SInt8  = Int8 
+type SInt16 = Int16 
+type SInt32 = Int32
+type SInt64 = Int64
+
+type UInt8  = Word8 
+type UInt16 = Word16 
+type UInt24 = Word24
+type UInt32 = Word32
+type UInt64 = Word64
+
+type Float32 = Float
+type Float64 = Double
+
+
+type Location = (UInt24, UInt8)
+
+type Timestamp = UInt32
 
 data NamedTag = NamedTag B.ByteString Tag deriving(Show, Ord, Eq)
 
@@ -23,18 +45,18 @@ type Name = B.ByteString
 
 data Tag
   = TagEnd
-  | TagByte Name Word8
-  | TagShort Name Int
-  | TagInt Name Int
-  | TagLong Name Int
-  | TagFloat Name (Bool, Int, Int)
-  | TagDouble Name (Bool, Int, Int)
+  | TagByte Name SInt8
+  | TagShort Name SInt16
+  | TagInt Name SInt32
+  | TagLong Name SInt64
+  | TagFloat Name Float32
+  | TagDouble Name Float64
   | TagByteArray Name B.ByteString
   | TagString Name B.ByteString
-  | TagList Int TagId Name [Tag]
+  | TagList TagId Name [Tag]
   | TagCompound Name [Tag]
-  | TagIntArray Name [Int]
-  | TagLongArray Name [Int]
+  | TagIntArray Name [SInt32]
+  | TagLongArray Name [SInt64]
   deriving(Show, Ord, Eq)
 
 data TagId
@@ -53,14 +75,26 @@ data TagId
   | TagLongArrayId
   deriving(Show, Ord, Eq)
 
-data Chunk = Chunk
-  { xOffset :: Int
-  , zOffset :: Int
-  , blocks :: [[[B.ByteString]]]
+-- A region contains all the data from a single minecraft save file (a given
+-- game may have many of these files). A region consists of a 32X32 grid of
+-- chunks, where each chunk is a column of 16X16X16 block sections.
+data Region = Region
+  { xOffset :: SInt32 -- offset from origin
+  , zOffset :: SInt32
+  , chunks :: [[Chunk]]
   }
 
+-- 16 X 16 X 16 cube of blocks
+type Chunk = [Section]
 
-code2tagid :: Word8 -> Maybe TagId
+-- A 16X16X16 block cube
+type Section = [Block]
+
+-- for now, just the name will suffice
+type Block = B.ByteString
+
+
+code2tagid :: UInt8 -> Maybe TagId
 code2tagid w = case w of
     0x00 -> Just TagEndId
     0x01 -> Just TagByteId
@@ -77,7 +111,7 @@ code2tagid w = case w of
     0x0c -> Just TagLongArrayId
     _ -> Nothing
 
-tagid2code :: TagId -> Word8
+tagid2code :: TagId -> UInt8
 tagid2code TagEndId       = 0x00 
 tagid2code TagByteId      = 0x01 
 tagid2code TagShortId     = 0x02 

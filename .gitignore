@@ -4,3 +4,4 @@ parse-minecraft.cabal
 z
 z.gz
 *.lock
+r.*.txt

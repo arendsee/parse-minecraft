@@ -3,5 +3,5 @@ module ParseMinecraft
   , chunkXZ
   ) where
 
-import ParseMinecraft.Lib (parseMCA)
+import ParseMinecraft.ParseMCA (parseMCA)
 import ParseMinecraft.Search (chunkXZ)
