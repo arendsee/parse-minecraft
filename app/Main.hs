@@ -18,7 +18,8 @@ main = do
     [] -> error "Please provide a single *.mca filename"
     (filename : _) -> do
       mca <- fmap parseMCA (B.readFile filename)
-      case mca of
-        Right (locations, timestamps, chunks, tags) -> pPrint tags
+      case mca of 
+        Right (_, _, _, tags) -> pPrint (pointcloud tags)
+        -- Right (locations, timestamps, chunks, tags) -> pPrint tags
         -- Right (locations, timestamps, chunks, tags) -> printPair $ map chunkXZ tags
         Left msg -> putStr msg
