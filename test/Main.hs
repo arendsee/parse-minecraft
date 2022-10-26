@@ -56,4 +56,7 @@ bitspreadTest =
         , testCase "1 [0]"  $ assertEqual "" (bitspread' 1 [0]) (take 64 (repeat 0))
         , testCase "32 [0]"  $ assertEqual "" (bitspread' 32 [0]) [0,0]
         , testCase "32 [1]"  $ assertEqual "" (bitspread' 32 [1]) [0,1]
+        , testCase "" $ assertEqual "" (bitspread' 4 [0]) [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+        , testCase "" $ assertEqual "" (bitspread' 4 [8]) [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,8]
+        , testCase "" $ assertEqual "" (bitspread' 4 [1229782938247303441]) [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
         ]

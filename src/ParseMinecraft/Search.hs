@@ -16,40 +16,37 @@ import qualified Data.Bits as Bits
 import ParseMinecraft.Namespace
 
 pointcloud :: [Tag] -> [(B.ByteString, Int64, Int64, Int64)]
-pointcloud = concatMap f where
-    f (TagCompound "" ts) = concatMap f ts
-    f (TagCompound "Level" chunks) = processChunks chunks
-    f _ = []
+pointcloud = concatMap processChunk . concatMap (findTags [TagCompound "" [], TagCompound "Level" []])
 
 
-processChunks :: [Tag] -> [(B.ByteString, Int64, Int64, Int64)]
-processChunks tags = case seek findSections tags of
-    Nothing -> []
-    (Just sections) -> concatMap processSection sections
-
+processChunk :: Tag -> [(B.ByteString, Int64, Int64, Int64)]
+processChunk = concatMap processSection . findTags [TagCompound "Level" [], TagList TagCompoundId "Sections" [], TagCompound "" []]
 
 processSection :: Tag -> [(B.ByteString, Int64, Int64, Int64)]
-processSection (TagCompound "" tags) = case seekTwo findBlockStates findPaletteNames tags of
-    Nothing -> []
-    (Just (packedIndices, palette)) ->
+processSection tag = case (
+        findTags [TagCompound "" [], TagLongArray "BlockStates" []] tag,
+        findTags [TagCompound "" [], TagList TagCompoundId "Palette" []] tag
+    ) of
+    ([TagLongArray _ packedIndices], [TagList _ _ palette]) ->
         let size = ceiling (logBase 2 (fromIntegral (length palette)))
             indices = bitspread size packedIndices
-        in processCube indices palette
-processSection _ = error "Unexpected section format"
+            paletteNames = [x | TagString "Name" x <- concatMap (findTags [TagCompound "" [], TagString "Name" ""]) palette]
+        in processCube indices paletteNames
+    _ -> error "Unexpected section format"
 
 
-processCube :: [Int] -> [B.ByteString] -> [(B.ByteString, Int64, Int64, Int64)]
-processCube indices names = zipWith f [names !! i' | i' <- indices] [0..] where
+processCube :: [Word64] -> [B.ByteString] -> [(B.ByteString, Int64, Int64, Int64)]
+processCube indices names = zipWith f [names !! fromIntegral i' | i' <- indices] [0..] where
     f :: B.ByteString -> Int64 -> (B.ByteString, Int64, Int64, Int64)
     f x i = (x, mod i 16, mod (div i 16) (16*16), div i (16*16))
 
 
-cubes :: (FiniteBits i, Integral i) 
-      => (Int, Int, Int)
-      -> [i] -- indices into [a]
-      -> [a] -- descriptions of each block
-      -> [[[a]]] -- folded 3d cube
-cubes dimension longs names = foldDimensions dimension [names !! i | i <- bitspread (length names) longs]
+-- cubes :: (FiniteBits i, Integral i)
+--       => (Int, Int, Int)
+--       -> [i] -- indices into [a]
+--       -> [a] -- descriptions of each block
+--       -> [[[a]]] -- folded 3d cube
+-- cubes dimension longs names = foldDimensions dimension [names !! i | i <- bitspread (length names) longs]
 
 
 -- | fold a 1D vector of blocks to a 3D vector
@@ -69,33 +66,61 @@ chunksOf _ [] = []
 chunksOf i xs = take i xs : chunksOf i (drop i xs)
 
 
--- Find the first instance of a pattern
-seek :: (b -> Maybe a) -> [b] -> Maybe a
-seek _ [] = Nothing
-seek f (x:xs) = case f x of
-  (Just y) -> Just y
-  Nothing -> seek f xs
+findTags :: [Tag] -> Tag -> [Tag]
+findTags [] _ = []
+findTags [x] y
+    | tagsMatch x y = [y]
+    | otherwise = []
+findTags (TagList t1 n1 _ : patterns) (TagList t2 n2 tags )
+    | t1 == t2 && n1 == n2 = concatMap (findTags patterns) tags
+    | otherwise = []
+findTags (TagCompound n1 _ : patterns) (TagCompound n2 tags)
+    | n1 == n2 = concatMap (findTags patterns) tags
+    | otherwise = []
+-- Nothing other than TagList and TagCompound may contain nested tags
+findTags (_:_) _ = []
 
 
-seekTwo :: (a -> Maybe b) -> (a -> Maybe c) -> [a] -> Maybe (b, c)
-seekTwo f g xs = (,) <$> seek f xs <*> seek g xs
+tagsMatch :: Tag -> Tag -> Bool
+tagsMatch TagEnd TagEnd = True
+tagsMatch (TagByte       n1 _ ) (TagByte       n2 _ ) = n1 == n2
+tagsMatch (TagShort      n1 _ ) (TagShort      n2 _ ) = n1 == n2
+tagsMatch (TagInt        n1 _ ) (TagInt        n2 _ ) = n1 == n2
+tagsMatch (TagLong       n1 _ ) (TagLong       n2 _ ) = n1 == n2
+tagsMatch (TagFloat      n1 _ ) (TagFloat      n2 _ ) = n1 == n2
+tagsMatch (TagDouble     n1 _ ) (TagDouble     n2 _ ) = n1 == n2
+tagsMatch (TagByteArray  n1 _ ) (TagByteArray  n2 _ ) = n1 == n2
+tagsMatch (TagString     n1 _ ) (TagString     n2 _ ) = n1 == n2
+tagsMatch (TagIntArray   n1 _ ) (TagIntArray   n2 _ ) = n1 == n2
+tagsMatch (TagLongArray  n1 _ ) (TagLongArray  n2 _ ) = n1 == n2
+tagsMatch (TagList t1 n1 _) (TagList t2 n2 _ ) = t1 == t2 && n1 == n2
+tagsMatch (TagCompound n1 _) (TagCompound n2 _) = n1 == n2
+tagsMatch _ _ = False
 
 
-findShortByName :: Name -> Tag -> Maybe Int16
-findShortByName name (TagShort tagName x)
-  | tagName == name = Just x
-  | otherwise = Nothing
-findShortByName name (TagCompound _ xs) = seek (findShortByName name) xs
-findShortByName name (TagList TagShortId _ xs) = seek (findShortByName name) xs
-findShortByName _ _ = Nothing
+tagName :: Tag -> B.ByteString
+tagName TagEnd = "TagEnd"
+tagName (TagByte       n _ ) = n
+tagName (TagShort      n _ ) = n
+tagName (TagInt        n _ ) = n
+tagName (TagLong       n _ ) = n
+tagName (TagFloat      n _ ) = n
+tagName (TagDouble     n _ ) = n
+tagName (TagByteArray  n _ ) = n
+tagName (TagString     n _ ) = n
+tagName (TagIntArray   n _ ) = n
+tagName (TagLongArray  n _ ) = n
+tagName (TagList _ n _) = n
+tagName (TagCompound n _) = n
+
 
 
 xPos :: Tag -> Maybe Int16
-xPos = findShortByName "xPos"
+xPos = undefined
 
 
 zPos :: Tag -> Maybe Int16
-zPos = findShortByName "zPos"
+zPos = undefined
 
 
 chunkXZ :: Tag -> (Int16, Int16)
@@ -122,6 +147,7 @@ stackBlocksY :: [[[[B.ByteString]]]] -> [[[B.ByteString]]]
 stackBlocksY = concat
 
 
+-- | This seems to behave oddly with signed integers
 bitspread
     :: (FiniteBits b, FiniteBits c, Integral b, Integral c)
     => Int -- ^ n: The number of bits in each output index
@@ -197,28 +223,3 @@ bitspreadPadded n xs = f undefined undefined xs where
 -- section :: Tag -> Maybe ([Int64], [B.ByteString])
 -- section = undefined
 -- -- section (TagCompound "" xs) = seekTwo blockState paletteNames xs
-
-findBlockStates :: Tag -> Maybe [Int64]
-findBlockStates (TagCompound "" xs) = seek findBlockStates xs
-findBlockStates (TagLongArray "BlockStates" xs) = Just xs
-findBlockStates _ = Nothing
-
-
-findPaletteNames :: Tag -> Maybe [B.ByteString]
-findPaletteNames (TagCompound "" xs) = seek findPaletteNames xs
-findPaletteNames (TagList _ "Palette" xs) = mapM inCompound xs
-  where
-    inCompound :: Tag -> Maybe B.ByteString
-    inCompound (TagCompound "" ys) = seek findName ys
-    inCompound _ = Nothing
-findPaletteNames _ = Nothing
-
-
-findSections :: Tag -> Maybe [Tag]
-findSections (TagList _ "Sections" xs) = Just xs
-findSections _ = Nothing
-
-
-findName :: Tag -> Maybe B.ByteString
-findName (TagString "name" findName) = Just findName
-findName _ = Nothing
