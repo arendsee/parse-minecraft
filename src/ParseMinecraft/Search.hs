@@ -5,13 +5,14 @@ module ParseMinecraft.Search
   , bitspread
   , bitspreadPadded
   , pointcloud
+  , upperMask
+  , showBits
   ) where
 
 import qualified Data.Maybe as DM
 import qualified Data.ByteString as B
 import Data.Word (Word64, Word16, Word8)
-import Data.Bits (shiftL, shiftR, (.|.), FiniteBits, finiteBitSize)
-import qualified Data.Bits as Bits
+import Data.Bits
 
 import ParseMinecraft.Namespace
 
@@ -36,9 +37,11 @@ processSection tag = case (
 
 
 processCube :: [Word64] -> [B.ByteString] -> [(B.ByteString, Int64, Int64, Int64)]
-processCube indices names = zipWith f [names !! fromIntegral i' | i' <- indices] [0..] where
-    f :: B.ByteString -> Int64 -> (B.ByteString, Int64, Int64, Int64)
-    f x i = (x, mod i 16, mod (div i 16) (16*16), div i (16*16))
+processCube indices names 
+    | fromIntegral (foldl max 0 indices) >= length names = error $ show (foldl max 0 indices, foldl min 9999 indices, indices, names)
+    | otherwise = zipWith f [names !! fromIntegral i' | i' <- indices] [0..] where
+        f :: B.ByteString -> Int64 -> (B.ByteString, Int64, Int64, Int64)
+        f x i = (x, mod i 16, mod (div i 16) (16*16), div i (16*16))
 
 
 -- cubes :: (FiniteBits i, Integral i)
@@ -161,23 +164,22 @@ bitspread n xs = f undefined undefined xs where
     g :: (FiniteBits c, Integral c) => Int -> Int -> [c]
     g nb nc = h nb xs where
 
+        mask = upperMask (nb - n)
+
         -- Int is the number of unused bits left in the current b value
-        -- [b] is the input data we are re-partioning
-        -- h :: (FiniteBits b, FiniteBits c) => Int -> [b] -> [c]
         h _ [] = []
         h 0 (_:xs) = h nb xs
         h k (x:xs)
             -- there are enough bits (this may leave k bits as 0)
-            | n <= k = fromIntegral (shiftR (shiftL x (nb - k)) (nb - n)) : h (k - n) (x:xs)
+            | n <= k = fromIntegral (mask .&. rotateR x (k - n)) : h (k - n) (x:xs)
             -- split
             | otherwise = case xs of
                 -- if there are not enough bits left to fill y, then y is padding, return nothing
                 [] -> []
                 -- otherwise grab bits from both x and the next long x'
                 (x':xs') ->
-                    let y = shiftR (shiftL x (nb - k)) (nb - n) .|. shiftR x' (nb - n + k)
+                    let y = mask .&. shiftL x (n - k) .|. shiftR (mask .&. rotateR x' (nb - n)) k
                     in fromIntegral y : h (nb - n + k) (x':xs')
-
 
 bitspreadPadded
     :: (FiniteBits b, FiniteBits c, Integral b, Integral c)
@@ -197,6 +199,17 @@ bitspreadPadded n xs = f undefined undefined xs where
             | nb - offset < n = h 0 xs
             | otherwise = fromIntegral (shiftR (shiftL x (fromIntegral offset)) (nb - nc)) : h (offset + n) (x:xs)
 
+
+upperMask :: FiniteBits a => Int -> a
+upperMask n = f undefined where
+    f :: FiniteBits a => a -> a
+    f dummy =
+        let size = finiteBitSize dummy
+        in flip rotateL (size - n) . flip shiftL n . complement $ zeroBits
+
+showBits :: FiniteBits a => a -> String
+showBits x = concat [if testBit x i then "1" else "0"
+                    | i <- reverse [0 .. finiteBitSize x]]
 
 -- -- | A 64 bit long is a long thing, no need to waste space. If the number of
 -- -- things being stored only require 32 bits, we might as well store two
