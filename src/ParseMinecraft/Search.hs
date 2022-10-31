@@ -32,16 +32,37 @@ processSection tag = case (
         let size = ceiling (logBase 2 (fromIntegral (length palette)))
             indices = bitspread size packedIndices
             paletteNames = [x | TagString "Name" x <- concatMap (findTags [TagCompound "" [], TagString "Name" ""]) palette]
-        in processCube indices paletteNames
+        in processCube packedIndices indices paletteNames
     _ -> error "Unexpected section format"
 
 
-processCube :: [Word64] -> [B.ByteString] -> [(B.ByteString, Int64, Int64, Int64)]
-processCube indices names 
-    | fromIntegral (foldl max 0 indices) >= length names = error $ show (foldl max 0 indices, foldl min 9999 indices, indices, names)
-    | otherwise = zipWith f [names !! fromIntegral i' | i' <- indices] [0..] where
-        f :: B.ByteString -> Int64 -> (B.ByteString, Int64, Int64, Int64)
-        f x i = (x, mod i 16, mod (div i 16) (16*16), div i (16*16))
+{- Performance Bug
+
+Here I am converting from the wrapped longs where block is stored in less than
+a single byte to a list where each element includes:
+ * 8 byte x
+ * 8 byte y
+ * 8 byte z
+ * 13-27 byte name + 8 byte pointer
+ * in a list 8 bytes
+
+I need to work out exactly what the Haskell structures all cost in memory, but
+essentially I unpacking from under 1 byte to at over 64 bytes.
+
+I should instead build an unboxed vector of, perhaps, 1 byte indices into a palette.k
+
+-}
+processCube :: [Int64] -> [Word64] -> [B.ByteString] -> [(B.ByteString, Int64, Int64, Int64)]
+processCube packed indices names = zipWith f [lookupBlock (fromIntegral i') | i' <- indices] [0..] where
+  f :: B.ByteString -> Int64 -> (B.ByteString, Int64, Int64, Int64)
+  f x i = (x, mod i 16, mod (div i 16) (16*16), div i (16*16))
+
+  n = length names
+
+  lookupBlock :: Int -> B.ByteString
+  lookupBlock i
+      | i < n = names !! i
+      | otherwise = "glitch"
 
 
 -- cubes :: (FiniteBits i, Integral i)
@@ -150,6 +171,30 @@ stackBlocksY :: [[[[B.ByteString]]]] -> [[[B.ByteString]]]
 stackBlocksY = concat
 
 
+{- 
+with n=5
+00001000  00001000  00001000  00001000
+.....---  --.....-  ----....  .-----xx
+1    0      4    0      16     2
+
+padded
+00001000  00001000  00001000  00001000
+.....xxx  .....xxx  -----xxx  -----xx
+1         1         1         1 
+
+with n=3
+padded
+00001000  00001000
+---...xx  ---...xx
+0  2      0  2
+
+with n=3
+padded
+10001000  10001000
+---...xx  ---...xx
+4  2      4  2
+-}
+
 -- | This seems to behave oddly with signed integers
 bitspread
     :: (FiniteBits b, FiniteBits c, Integral b, Integral c)
@@ -181,6 +226,8 @@ bitspread n xs = f undefined undefined xs where
                     let y = mask .&. shiftL x (n - k) .|. shiftR (mask .&. rotateR x' (nb - n)) k
                     in fromIntegral y : h (nb - n + k) (x':xs')
 
+
+
 bitspreadPadded
     :: (FiniteBits b, FiniteBits c, Integral b, Integral c)
     => Int -- ^ n: The number of bits in each output index
@@ -193,11 +240,13 @@ bitspreadPadded n xs = f undefined undefined xs where
     g :: (FiniteBits c, Integral c) => Int -> Int -> [c]
     g nb nc = h nb xs where
 
-        h :: (FiniteBits b, FiniteBits c, Integral b, Integral c) => Int -> [b] -> [c]
+        mask = upperMask (nb - n)
+
+        -- h :: (FiniteBits b, FiniteBits c, Integral b, Integral c) => Int -> [b] -> [c]
         h _ [] = []
         h offset (x:xs)
-            | nb - offset < n = h 0 xs
-            | otherwise = fromIntegral (shiftR (shiftL x (fromIntegral offset)) (nb - nc)) : h (offset + n) (x:xs)
+            | offset - n < 0 = h nb xs
+            | otherwise = fromIntegral (mask .&. rotateR x (offset - n)) : h (offset - n) (x:xs)
 
 
 upperMask :: FiniteBits a => Int -> a
@@ -209,7 +258,7 @@ upperMask n = f undefined where
 
 showBits :: FiniteBits a => a -> String
 showBits x = concat [if testBit x i then "1" else "0"
-                    | i <- reverse [0 .. finiteBitSize x]]
+                    | i <- reverse [0 .. (finiteBitSize x - 1)]]
 
 -- -- | A 64 bit long is a long thing, no need to waste space. If the number of
 -- -- things being stored only require 32 bits, we might as well store two
